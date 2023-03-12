@@ -18,6 +18,8 @@ default = ["native"]
 native = ["esp-idf-sys/native"]
 
 [dependencies]
+embedded-hal = "0.2.7"
+esp-idf-hal = "0.40.1"
 esp-idf-sys = { version = "0.32.1", features = ["binstart"] }
 lsm303agr = "0.2.2"
 
