@@ -1,0 +1,3 @@
+[submodule "Protofiles"]
+	path = Protofiles
+	url = git@github.com:Valiturus-Team/Protofiles.git
