@@ -40,6 +40,11 @@
     9333,
     8000
   ],
+  "mounts": [
+    "source=/home/lance/Documents/valiturus/rusty-sensor/app,target=/home/esp/rusty_sensor/app,type=bind,consistency=cached",
+    "source=/home/lance/Documents/valiturus/rusty-sensor/Protofiles,target=/home/esp/rusty_sensor/Protofiles,type=bind,consistency=cached",
+    "source=/home/lance/Documents/valiturus/rusty-sensor/app_algorithims,target=/home/esp/rusty_sensor/app_algorithims,type=bind,consistency=cached"
+  ],
   "workspaceMount": "source=${localWorkspaceFolder},target=/home/esp/rusty_sensor,type=bind,consistency=cached",
   "workspaceFolder": "/home/esp/rusty_sensor"
 }
