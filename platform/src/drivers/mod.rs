@@ -7,6 +7,6 @@
     - lsm303agr
 
 */
-
+pub mod bmi160_sensor;
 pub mod button;
 pub mod lsm303agr;

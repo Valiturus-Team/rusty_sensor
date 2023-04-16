@@ -4,25 +4,29 @@ use std::{
     thread, time,
 };
 
-use crate::rust_proto::algorithim;
 use crate::{domain::domain, rust_proto::algorithim::AlgorithimConfiguration};
+use crate::{domain::domain::ButtonEvent, rust_proto::algorithim};
+use crossbeam_channel::{unbounded, Receiver, Sender};
 use protobuf::{Message, SpecialFields};
 
 pub struct App {
     sensor_input_buffer: Arc<sync::Mutex<Vec<u8>>>,
     sensor_output_buffer: Arc<sync::Mutex<Vec<u8>>>,
-    algorithimConfiguration: algorithim::AlgorithimConfiguration,
+    algorithim_configuration: algorithim::AlgorithimConfiguration,
+    buttonEvents: Receiver<domain::ButtonEvent>,
 }
 
 impl App {
     pub fn new(
         sensor_input_buffer: Arc<sync::Mutex<Vec<u8>>>,
         sensor_output_buffer: Arc<sync::Mutex<Vec<u8>>>,
+        button_eventer: Receiver<ButtonEvent>,
     ) -> Self {
         App {
             sensor_input_buffer,
             sensor_output_buffer,
-            algorithimConfiguration: algorithim::AlgorithimConfiguration::default(),
+            algorithim_configuration: algorithim::AlgorithimConfiguration::default(),
+            buttonEvents: button_eventer,
         }
     }
     // write data to buffer
@@ -31,14 +35,24 @@ impl App {
         out_buffer.lock().unwrap().write_all(bytes).unwrap();
     }
     fn set_configuration(&mut self, conf: algorithim::AlgorithimConfiguration) {
-        self.algorithimConfiguration = conf;
+        self.algorithim_configuration = conf;
     }
     pub fn run(mut self) {
+        let btn_events = self.buttonEvents.clone();
+        thread::spawn(move || loop {
+            match btn_events.recv() {
+                Ok(_) => {
+                    println!("got button press!")
+                }
+                Err(err) => println!("error receiving event {:?}", err),
+            }
+        });
+
         let inp_buffer = Arc::clone(&self.sensor_input_buffer);
         loop {
-            let mut buffer = inp_buffer.lock().unwrap(); // reads from the buffer untill an EOF is recieved
+            let mut buffer = inp_buffer.lock().unwrap();
             let tmp_buffer = buffer.clone();
-            buffer.clear(); // clear the bytes in the buffer once read
+            buffer.clear();
             println!("received bytes: {:?}", buffer);
 
             let test: Result<algorithim::Message, protobuf::Error> =
@@ -58,4 +72,14 @@ impl App {
             thread::sleep(time::Duration::from_millis(50));
         }
     }
+}
+
+// todo
+trait ReadBMI {}
+
+// todo
+trait ReadLSM {}
+
+pub trait ButtonEvents {
+    fn button_channel(&self) -> Receiver<domain::ButtonEvent>; // gets the button channel
 }

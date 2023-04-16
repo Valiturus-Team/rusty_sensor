@@ -19,7 +19,8 @@ native = ["esp-idf-sys/native"]
 
 [dependencies]
 embedded-svc = "0.24.*"
-embedded-hal = "0.2.7"
+embedded-hal = { version = "0.2.7", package = "embedded-hal" }
+embedded_hal_1 = { version = "1.0.0-alpha.9", package = "embedded-hal" }
 esp-idf-hal = "0.40.*"
 esp-idf-sys = { version = "0.32.*", features = ["binstart"] }
 lsm303agr = "0.2.2"
@@ -28,6 +29,8 @@ esp32-nimble = "0.0.7"
 log = { version = "0.4", default-features = false }
 protobuf = "3.2.0"
 app = { path = "app" }
+bmi160 = "0.1.2"
+crossbeam-channel = "0.5.8"
 # app_algorithims = { path = "app_algorithims" }
 
 [package.metadata.espflash]

@@ -1,7 +1,9 @@
-use std::{fmt::Debug, sync::Arc};
+use std::fmt::Debug;
 
+use app::domain::domain;
 use esp_idf_hal::{
-    i2c::{config, I2cDriver},
+    gpio::{Gpio0, Gpio1},
+    i2c::{config, I2cDriver, I2C0},
     peripherals::Peripherals,
     prelude::*,
 };
@@ -26,11 +28,11 @@ pub enum Error {
 /*
     Init sensor
 */
-pub fn init_sensor() -> Result<LSM303AGRSensor<I2cInterface<I2cDriver<'static>>>, Error> {
-    let peripherals = Peripherals::take().unwrap();
-    let sda = peripherals.pins.gpio0;
-    let scl = peripherals.pins.gpio1;
-
+pub fn new(
+    sda: Gpio0,
+    scl: Gpio1,
+    _i2c: I2C0,
+) -> Result<LSM303AGRSensor<I2cInterface<I2cDriver<'static>>>, Error> {
     // master configuration (default)
     let i2c_config = config::Config {
         baudrate: Hertz(500000),
@@ -38,7 +40,7 @@ pub fn init_sensor() -> Result<LSM303AGRSensor<I2cInterface<I2cDriver<'static>>>
         scl_pullup_enabled: false,
     };
 
-    let res = I2cDriver::new(peripherals.i2c0, sda, scl, &i2c_config);
+    let res = I2cDriver::new(_i2c, sda, scl, &i2c_config);
 
     if res.is_err() {
         return Err(Error::HardwareError);
@@ -49,7 +51,9 @@ pub fn init_sensor() -> Result<LSM303AGRSensor<I2cInterface<I2cDriver<'static>>>
     let continuos_mag_result = sensor.into_mag_continuous();
 
     match continuos_mag_result {
-        Ok(res) => Ok(LSM303AGRSensor { sensor: res }),
+        Ok(res) => {
+            return Ok(LSM303AGRSensor { sensor: res });
+        }
         Err(_) => Err(Error::HardwareError),
     }
 }
