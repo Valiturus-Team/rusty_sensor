@@ -1,40 +1,28 @@
-use bmi160::interface;
-use bmi160::interface::ReadData;
+use std::{thread, time};
+
+use app::domain::domain;
 use bmi160::interface::SpiInterface;
-use bmi160::Sensor3DData;
-use embedded_hal_1::spi::SpiDevice;
-use esp_idf_hal::gpio::AnyOutputPin;
+use bmi160::{AccelerometerPowerMode, Bmi160, GyroscopePowerMode, SensorSelector};
+use crossbeam_channel::bounded;
+use crossbeam_channel::Receiver;
+use crossbeam_channel::Sender;
+use esp_idf_hal::delay::FreeRtos;
+use esp_idf_hal::gpio::AnyIOPin;
 use esp_idf_hal::gpio::Gpio4;
 use esp_idf_hal::gpio::Gpio5;
 use esp_idf_hal::gpio::Gpio6;
-use esp_idf_hal::prelude::*;
-use std::any::Any;
-use std::sync::Arc;
-
-use bmi160::{AccelerometerPowerMode, Bmi160, GyroscopePowerMode, SensorSelector, SlaveAddr};
-
-use embedded_hal::spi::MODE_1;
-use esp_idf_hal::delay::FreeRtos;
-use esp_idf_hal::gpio;
-use esp_idf_hal::gpio::AnyIOPin;
 use esp_idf_hal::gpio::Gpio7;
 use esp_idf_hal::gpio::Output;
 use esp_idf_hal::gpio::PinDriver;
-use esp_idf_hal::peripheral::Peripheral;
+use esp_idf_hal::prelude::*;
 use esp_idf_hal::spi::config;
-use esp_idf_hal::spi::SpiAnyPins;
 use esp_idf_hal::spi::SpiDeviceDriver;
-use esp_idf_hal::spi::SpiSoftCsDeviceDriver;
-use esp_idf_hal::{
-    peripherals::Peripherals,
-    prelude::*,
-    spi::{SpiConfig, SpiDriver, SPI2},
-};
-use esp_idf_sys::esp_log_write;
-use esp_idf_sys::EspError;
+use esp_idf_hal::spi::{SpiDriver, SPI2};
 
 pub struct BMI160Sensor<'a> {
     imu: Bmi160<SpiInterface<SpiDeviceDriver<'a, SpiDriver<'a>>, PinDriver<'a, Gpio7, Output>>>,
+    sender: Sender<domain::BMI160Data>,
+    pub receiver: Receiver<domain::BMI160Data>,
 }
 
 impl BMI160Sensor<'static> {
@@ -64,17 +52,72 @@ impl BMI160Sensor<'static> {
 
         match dev {
             Ok(device) => {
+                let (sender, receiver) = bounded::<domain::BMI160Data>(100);
                 let imu = Bmi160::new_with_spi(device, cs);
-                Ok(BMI160Sensor { imu })
+                Ok(BMI160Sensor {
+                    imu,
+                    sender,
+                    receiver,
+                })
             }
             Err(err) => {
-                println!("error creating spi device {:?}", err);
+                ::log::info!("error creating spi device {:?}", err);
                 Err(err)
             }
         }
     }
-    pub fn init_sensor() -> Result<(), esp_idf_sys::EspError> {
+    pub fn init_sensor(&mut self) -> Result<(), esp_idf_sys::EspError> {
+        self.imu.chip_id().unwrap();
+        self.imu.chip_id().unwrap();
+        let id = self.imu.chip_id().unwrap_or_else(|err| {
+            ::log::info!("error reading chip id: {:?}", err);
+            90
+        });
+        ::log::info!("Chip ID: {}", id);
+        FreeRtos::delay_ms(500);
+        ::log::info!("setting power mode!");
+        self.imu
+            .set_accel_power_mode(AccelerometerPowerMode::Normal)
+            .unwrap_or_else(|err| ::log::info!("error setting accel mode: {:?}", err));
+        FreeRtos::delay_ms(500);
+        ::log::info!("setting gyro power mode!");
+        self.imu
+            .set_gyro_power_mode(GyroscopePowerMode::Normal)
+            .unwrap();
+        FreeRtos::delay_ms(500);
+        ::log::info!("disabling magnet");
+        self.imu
+            .set_magnet_power_mode(bmi160::MagnetometerPowerMode::Suspend)
+            .unwrap();
+        FreeRtos::delay_ms(500);
+        ::log::info!("power mode: {:?}", self.imu.power_mode().unwrap());
+        FreeRtos::delay_ms(500);
+        ::log::info!("status: {:?}", self.imu.status().unwrap());
+        FreeRtos::delay_ms(500);
         Ok(())
+    }
+    pub fn process_loop(&mut self) {
+        loop {
+            let data = self.imu.data(SensorSelector::all()).unwrap();
+            if self.imu.status().unwrap().accel_data_ready
+                && self.imu.status().unwrap().gyro_data_ready
+            {
+                let time = data.time.unwrap();
+                let accel = data.accel.unwrap();
+                let gyro = data.gyro.unwrap();
+
+                // put data on the channel
+                let _ = self.sender.send(domain::BMI160Data {
+                    gyro_x: gyro.x,
+                    gyro_y: gyro.y,
+                    gyro_z: gyro.z,
+                    accel_x: accel.x,
+                    accel_y: accel.y,
+                    accel_z: accel.z,
+                    sample_time: time,
+                });
+            }
+        }
     }
 }
 
@@ -118,25 +161,25 @@ impl BMI160Sensor<'static> {
 //     imu.chip_id().unwrap();
 //     imu.chip_id().unwrap();
 //     let id = imu.chip_id().unwrap_or_else(|err| {
-//         println!("error reading chip id: {:?}", err);
+//         ::log::info!("error reading chip id: {:?}", err);
 //         90
 //     });
-//     println!("Chip ID: {}", id);
+//     ::log::info!("Chip ID: {}", id);
 //     FreeRtos::delay_ms(500);
-//     println!("setting power mode!");
+//     ::log::info!("setting power mode!");
 //     imu.set_accel_power_mode(AccelerometerPowerMode::Normal)
-//         .unwrap_or_else(|err| println!("error setting accel mode: {:?}", err));
+//         .unwrap_or_else(|err| ::log::info!("error setting accel mode: {:?}", err));
 //     FreeRtos::delay_ms(500);
-//     println!("setting gyro power mode!");
+//     ::log::info!("setting gyro power mode!");
 //     imu.set_gyro_power_mode(GyroscopePowerMode::Normal).unwrap();
 //     FreeRtos::delay_ms(500);
-//     println!("disabling magnet");
+//     ::log::info!("disabling magnet");
 //     imu.set_magnet_power_mode(bmi160::MagnetometerPowerMode::Suspend)
 //         .unwrap();
 //     FreeRtos::delay_ms(500);
-//     println!("power mode: {:?}", imu.power_mode().unwrap());
+//     ::log::info!("power mode: {:?}", imu.power_mode().unwrap());
 //     FreeRtos::delay_ms(500);
-//     println!("status: {:?}", imu.status().unwrap());
+//     ::log::info!("status: {:?}", imu.status().unwrap());
 //     FreeRtos::delay_ms(500);
 
 //     let mut imu = Bmi160::new_with_spi(dev, cs);

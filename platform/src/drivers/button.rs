@@ -75,10 +75,10 @@ impl Button {
                 if res != 1 {
                     continue; // if we recevied anything but a one continue
                 }
-                println!("sending event!");
+                ::log::info!("sending event!");
                 // send button press event
                 if let Err(err) = self.sender.send(true) {
-                    println!("error sending button press event {:?}", err)
+                    ::log::info!("error sending button press event {:?}", err)
                 }
             }
         }

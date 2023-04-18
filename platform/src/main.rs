@@ -15,7 +15,7 @@ use std::{
 use app::domain::domain::{self, ReadWrite};
 use crossbeam_channel::unbounded;
 use drivers::button::{self};
-use esp_idf_hal::prelude::Peripherals;
+use esp_idf_hal::{prelude::Peripherals, task::thread::ThreadSpawnConfiguration};
 use protobuf::Message;
 
 use crate::bluetooth::ble;
@@ -36,14 +36,16 @@ fn main() {
     */
     let peripherals = Peripherals::take().unwrap();
 
-    let buttonResult = drivers::button::Button::new();
+    let button_result = drivers::button::Button::new();
 
-    let lsm303 = drivers::lsm303agr::new(
+    let lsm303_result = drivers::lsm303agr::new(
         peripherals.pins.gpio0,
         peripherals.pins.gpio1,
         peripherals.i2c0,
     );
-    // println!("error initialising lsm303agr {:?}", err)
+    let mut lsm303 = lsm303_result.unwrap();
+
+    // ::log::info!("error initialising lsm303agr {:?}", err)
     // pins
     let _cs_gpio = peripherals.pins.gpio7;
     let _sclk = peripherals.pins.gpio6;
@@ -52,7 +54,8 @@ fn main() {
 
     let bmi160_result =
         drivers::bmi160_sensor::BMI160Sensor::new(_sclk, _sdo, _sdi, peripherals.spi2, _cs_gpio);
-    // println!("error initialising bmi160 {:?}",err);
+    let mut bmi160 = bmi160_result.unwrap();
+    bmi160.init_sensor();
 
     /*
         Init and Run Bluetotooth
@@ -66,24 +69,62 @@ fn main() {
     bluetooth_processor = bluetooth_processor.init_device();
     bluetooth_processor = bluetooth_processor.init_server();
 
-    thread::spawn(|| {
+    ThreadSpawnConfiguration {
+        name: Some("Thread-H\0".as_bytes()),
+        priority: 5,
+        ..Default::default()
+    }
+    .set()
+    .unwrap();
+    let _ = thread::Builder::new().spawn(|| {
         bluetooth_processor.run_ble();
     });
 
     /*
         Init and Run App
     */
-    let button = Box::new(buttonResult.unwrap());
+    let button = Box::new(button_result.unwrap());
 
     let my_app = app::app::app::App::new(
         Arc::clone(&input_buffer),
         Arc::clone(&output_buffer),
         button.button_channel(),
+        lsm303.receiver.clone(),
+        bmi160.receiver.clone(),
     );
 
     // start hardware tasks
-    thread::spawn(|| {
+    ThreadSpawnConfiguration {
+        name: Some("Thread-A\0".as_bytes()),
+        priority: 5,
+        ..Default::default()
+    }
+    .set()
+    .unwrap();
+    thread::Builder::new().spawn(|| {
         button.button_loop();
+    });
+
+    ThreadSpawnConfiguration {
+        name: Some("Thread-B\0".as_bytes()),
+        priority: 25,
+        ..Default::default()
+    }
+    .set()
+    .unwrap();
+    thread::Builder::new().spawn(move || {
+        lsm303.process_loop();
+    });
+
+    ThreadSpawnConfiguration {
+        name: Some("Thread-C\0".as_bytes()),
+        priority: 25,
+        ..Default::default()
+    }
+    .set()
+    .unwrap();
+    thread::Builder::new().spawn(move || {
+        bmi160.process_loop();
     });
 
     // run app tasks

@@ -1,6 +1,8 @@
-use std::fmt::Debug;
+use core::time;
+use std::{fmt::Debug, thread};
 
 use app::domain::domain;
+use crossbeam_channel::{bounded, unbounded, Receiver, Sender};
 use esp_idf_hal::{
     gpio::{Gpio0, Gpio1},
     i2c::{config, I2cDriver, I2C0},
@@ -18,6 +20,8 @@ use lsm303agr::{
 #[derive(Debug)]
 pub struct LSM303AGRSensor<I2c> {
     sensor: Lsm303agr<I2c, MagContinuous>,
+    sender: Sender<domain::LSMData>,
+    pub receiver: Receiver<domain::LSMData>,
 }
 
 #[derive(Debug)]
@@ -50,19 +54,23 @@ pub fn new(
 
     let continuos_mag_result = sensor.into_mag_continuous();
 
+    let (sender, receiver) = unbounded();
+
     match continuos_mag_result {
-        Ok(res) => {
-            return Ok(LSM303AGRSensor { sensor: res });
-        }
+        Ok(sensor) => Ok(LSM303AGRSensor {
+            sensor,
+            sender,
+            receiver,
+        }),
         Err(_) => Err(Error::HardwareError),
     }
 }
 
 impl LSM303AGRSensor<I2cInterface<I2cDriver<'static>>> {
-    pub fn button_loop(&mut self, reader: Box<dyn LSM303agrReader>) {
+    pub fn process_loop(&mut self) {
         self.sensor.init().unwrap();
         self.sensor
-            .set_accel_odr(AccelOutputDataRate::Hz100)
+            .set_accel_odr(AccelOutputDataRate::Hz400)
             .unwrap();
         self.sensor
             .set_mag_odr(lsm303agr::MagOutputDataRate::Hz100)
@@ -75,22 +83,27 @@ impl LSM303AGRSensor<I2cInterface<I2cDriver<'static>>> {
             // then we dont need seprate threads (beccause accell_status is blocking and so)
 
             if self.sensor.accel_status().unwrap().xyz_new_data {
-                let data = self.sensor.accel_data().unwrap();
-                reader.read_accel_data(data, micros());
-            }
-            if self.sensor.mag_status().unwrap().xyz_new_data {
-                let data = self.sensor.mag_data().unwrap();
-                reader.read_mag_data(data, micros());
+                let acell_data = self.sensor.accel_data().unwrap();
+                // let mag_data = self.sensor.mag_data().unwrap();
+                // println!(
+                //     "{:?},{:?},{:?},{:?},{:?},{:?},{:?}",
+                //     acell_data.x,
+                //     acell_data.y,
+                //     acell_data.z,
+                //     { esp_timer_get_time() },
+                // );
+
+                // if the channel is slow we could try chunnking the channel
+                let _ = self.sender.send(domain::LSMData {
+                    mag_x: 0,
+                    mag_y: 0,
+                    mag_z: 0,
+                    accel_x: acell_data.x,
+                    accel_y: acell_data.y,
+                    accel_z: acell_data.z,
+                    timestamp: unsafe { esp_timer_get_time() },
+                });
             }
         }
     }
-}
-
-fn micros() -> i64 {
-    unsafe { esp_timer_get_time() }
-}
-
-pub trait LSM303agrReader {
-    fn read_mag_data(&self, measurement: Measurement, microsTimestamp: i64);
-    fn read_accel_data(&self, measurement: Measurement, microsTimestamp: i64);
 }

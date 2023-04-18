@@ -6,7 +6,7 @@ use std::{
         mpsc::{sync_channel, Receiver, SyncSender},
         Arc,
     },
-    u8,
+    thread, time, u8,
 };
 
 use esp32_nimble::{
@@ -111,7 +111,7 @@ impl BluetoothProcessing {
                 .unwrap()
                 .get_advertising()
                 .stop()
-                .unwrap_or_else(|err| println!("error stopping advertising {:?}", err));
+                .unwrap_or_else(|err| ::log::info!("error stopping advertising {:?}", err));
         });
 
         device.lock().unwrap().get_server().on_disconnect(move |_| {
@@ -218,9 +218,7 @@ impl BluetoothProcessing {
                                     }
                                     _ => {}
                                 }
-
                                 ota_logic_control_arc.lock().unwrap().packets_received = 0;
-
                                 ::log::info!("control request ack");
 
                                 // no error so ack
@@ -357,17 +355,17 @@ impl BluetoothProcessing {
             NimbleProperties::NOTIFY | NimbleProperties::READ,
         );
 
-        // let byteWriter = Arc::clone(&self.byte_input_stream);
+        let byteWriter = Arc::clone(&self.byte_input_stream);
         byte_in_stream_characteristic
             .lock()
             .on_write(move |data, _conn| {
-                println!("got data in ble processnig {:?}", data);
-                let err = self.byte_input_stream.lock().unwrap().write(data);
+                ::log::info!("got data in ble processnig {:?}", data);
+                let err = byteWriter.lock().unwrap().write(data);
                 match err {
                     Ok(size) => {
-                        println!("wrote {:?} bytes", size);
+                        ::log::info!("wrote {:?} bytes", size);
                     }
-                    Err(_) => println!("error writing to byte inp stream: {:?}", err),
+                    Err(_) => ::log::info!("error writing to byte inp stream: {:?}", err),
                 }
             });
 
@@ -379,9 +377,7 @@ impl BluetoothProcessing {
         loop {
             // send bytes if there are bytes to send
             let buffer_len = self.byte_output_stream.lock().unwrap().len();
-            println!("capacity: {:?}", buffer_len);
             if buffer_len > 0 {
-                println!("HERE");
                 let mut temp_vec = Vec::<u8>::with_capacity(buffer_len);
                 for val in
                     self.byte_output_stream
@@ -393,8 +389,7 @@ impl BluetoothProcessing {
                 {
                     temp_vec.push(val);
                 }
-
-                println!("writing bytes: {:?}", temp_vec);
+                ::log::info!("writing bytes: {:?}", temp_vec);
                 byte_out_char.lock().set_value(&temp_vec).notify();
             }
 
@@ -423,7 +418,7 @@ impl BluetoothProcessing {
                     }
                 }
             }
-            esp_idf_hal::delay::FreeRtos::delay_ms(1000);
+            thread::sleep(time::Duration::from_millis(200));
         }
     }
 }

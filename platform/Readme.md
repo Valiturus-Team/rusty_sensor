@@ -5,7 +5,6 @@ This repository is the firmware for the valirutus sensor.
 ## Dev notes
 
 Code that is hardware agnostic should be split into sub crates where it can be unit tested, i.e. the app_state sub crate.
-
 The root project, should contain the hardware specific code and contains the entry point of the application. 
 
 ## building and flashing firmware
